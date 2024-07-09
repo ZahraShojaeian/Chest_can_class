@@ -4,9 +4,10 @@ from zipfile import ZipFile
 import tensorflow as tf
 from pathlib import Path
 from cnnClassifier.entity.config_entity import PrepareBaseModelConfig
-                                                
-
-
+from tensorflow.keras.layers import Conv2D, Multiply, Concatenate, Lambda
+from tensorflow.keras.applications import VGG19
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Flatten, Dense, Dropout, BatchNormalization, MaxPooling2D, Input
 
 
 class PrepareBaseModel:
@@ -15,13 +16,25 @@ class PrepareBaseModel:
 
     
     def get_base_model(self):
-        self.model = tf.keras.applications.vgg16.VGG16(
+        self.model = tf.keras.applications.vgg19.VGG19(
             input_shape=self.config.params_image_size,
             weights=self.config.params_weights,
             include_top=self.config.params_include_top
         )
 
         self.save_model(path=self.config.base_model_path, model=self.model)
+
+
+    @staticmethod
+    def spatial_attention(input_feature):
+        kernel_size = 7
+
+        avg_pool = Lambda(lambda x: tf.keras.backend.mean(x, axis=-1, keepdims=True))(input_feature)
+        max_pool = Lambda(lambda x: tf.keras.backend.max(x, axis=-1, keepdims=True))(input_feature)
+        concat = Concatenate(axis=-1)([avg_pool, max_pool])
+
+        attention = Conv2D(1, (kernel_size, kernel_size), padding='same', activation='sigmoid', kernel_initializer='he_normal')(concat)
+        return Multiply()([input_feature, attention])
 
 
     
@@ -34,19 +47,27 @@ class PrepareBaseModel:
             for layer in model.layers[:-freeze_till]:
                 model.trainable = False
 
-        flatten_in = tf.keras.layers.Flatten()(model.output)
-        prediction = tf.keras.layers.Dense(
-            units=classes,
-            activation="softmax"
-        )(flatten_in)
+        # Apply spatial attention after VGG19
+        x = PrepareBaseModel.spatial_attention(model.output)
 
-        full_model = tf.keras.models.Model(
-            inputs=model.input,
-            outputs=prediction
-        )
+        # Add custom CNN layers after attention mechanism
+        x = Conv2D(512, (3, 3), activation='relu', padding='same')(x)
+        x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+        x = BatchNormalization()(x)
+        x = MaxPooling2D((2, 2))(x)
+        x = Flatten()(x)
+
+        # Add fully connected layers
+        x = Dense(512, activation='relu')(x)
+        x = Dropout(0.5)(x)
+        x = Dense(512, activation='relu')(x)
+        x = Dropout(0.25)(x)
+        output = Dense(classes, activation='softmax')(x)
+
+        full_model = Model(inputs=model.input, outputs=output)
 
         full_model.compile(
-            optimizer=tf.keras.optimizers.SGD(learning_rate=learning_rate),
+            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
             loss=tf.keras.losses.CategoricalCrossentropy(),
             metrics=["accuracy"]
         )

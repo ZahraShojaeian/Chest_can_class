@@ -16,7 +16,7 @@ class Evaluation:
 
         datagenerator_kwargs = dict(
             rescale = 1./255,
-            validation_split=0.30
+            validation_split=0.99
         )
 
         dataflow_kwargs = dict(
@@ -65,10 +65,10 @@ class Evaluation:
             # Model registry does not work with file store
             if tracking_url_type_store != "file":
 
-                # Register the model
-                # There are other ways to use the Model Registry, which depends on the use case,
-                # please refer to the doc for more information:
-                # https://mlflow.org/docs/latest/model-registry.html#api-workflow
-                mlflow.keras.log_model(self.model, "model", registered_model_name="VGG16Model")
+
+                mlflow.keras.log_model(self.model, "model", registered_model_name="VGG19Model")
             else:
                 mlflow.keras.log_model(self.model, "model")
+
+
+
